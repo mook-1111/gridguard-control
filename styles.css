@@ -217,6 +217,11 @@ input:focus-visible {
   box-shadow: 0 0 0 4px rgba(102, 224, 163, 0.09), 0 0 14px rgba(102, 224, 163, 0.5);
 }
 
+.status-dot.offline {
+  background: var(--red);
+  box-shadow: 0 0 0 4px rgba(255, 98, 111, 0.08), 0 0 14px rgba(255, 98, 111, 0.4);
+}
+
 .main-content {
   width: calc(100% - var(--sidebar));
   margin-left: var(--sidebar);
@@ -1056,7 +1061,7 @@ button.demo-badge {
 
 .ghost-button.compact {
   padding: 8px 11px;
-  font-size: 9px;
+  font-size: 0.875rem;
 }
 
 .hidden {
@@ -1862,7 +1867,8 @@ body { font-size: 1rem; }
 
 .brand small { font-size: 0.75rem; }
 .sidebar-foot > span,
-.connection-card small { font-size: 0.8125rem; }
+.connection-card small,
+.connection-card > span { font-size: 0.8125rem; }
 .connection-line strong { font-size: 0.9375rem; }
 .section-kicker { font-size: 0.8125rem; }
 .demo-badge { font-size: 0.75rem; }
@@ -1874,6 +1880,7 @@ body { font-size: 1rem; }
 .metric-main.number span:not(.state-chip) { font-size: 0.875rem; }
 .metric-card > p { font-size: 0.875rem; line-height: 1.55; }
 .state-chip { font-size: 0.75rem; }
+.legend,
 .updated-label,
 .chart-legend { font-size: 0.8125rem; }
 

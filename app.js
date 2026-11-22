@@ -8,8 +8,22 @@ const META = [
 const cfg = {
   base: sessionStorage.getItem("gridguard.deviceUrl") || "",
 };
+const CLOUD_MODE = location.protocol === "https:";
+const MQTT_CONFIG = {
+  url: "wss://broker.emqx.io:8084/mqtt",
+  topicRoot: "gridguard/demo-82f6c19e4d7a5b30",
+};
+const MQTT_TOPICS = {
+  status: `${MQTT_CONFIG.topicRoot}/status`,
+  command: `${MQTT_CONFIG.topicRoot}/command`,
+  ack: `${MQTT_CONFIG.topicRoot}/ack`,
+};
 const state = { connected: false, busy: false, error: "尚未連接 ESP32", status: null, updated: null, events: [], history: Array(36).fill(null) };
 let pending = null;
+let mqttClient = null;
+let mqttLoading = null;
+let lastMqttMessageAt = 0;
+const mqttRequests = new Map();
 const refs = Object.fromEntries([
   "clockTime", "clockDate", "controllerStatusText", "controllerAddress", "lastUpdateSide", "connectionBadge",
   "mainBreakerMetric", "mainBreakerChip", "mainBreakerSub", "totalPower", "activeCircuits", "supplySource", "supplyChip", "supplySub",
@@ -17,7 +31,7 @@ const refs = Object.fromEntries([
   "batteryNodeValue", "remoteLockBadge", "breakerVisual", "breakerVisualText", "breakerVisualSub", "masterActionBtn", "restoreMasterBtn", "lastMasterAction", "circuitsGrid",
   "batteryGauge", "batterySoc", "batteryVoltage", "batteryCurrent", "chargingChip", "batteryFlow",
   "peakPower", "avgPower", "powerChart", "eventTableBody", "confirmModal", "modalIcon", "modalKicker", "modalTitle", "modalDescription", "modalImpact",
-  "confirmField", "confirmInput", "modalConfirmBtn", "connectionModal", "deviceUrlInput", "mixedContentWarning", "toastRegion",
+  "confirmField", "confirmInput", "modalConfirmBtn", "connectionModal", "connectionHelp", "deviceUrlField", "deviceUrlInput", "mixedContentWarning", "toastRegion", "statusDot",
 ].map((id) => [id, $(`#${id}`)]));
 
 const finite = (v) => v === null || v === undefined || v === "" ? null : (Number.isFinite(Number(v)) ? Number(v) : null);
@@ -32,6 +46,74 @@ async function fetchTimed(url, options = {}, ms = 2800) {
   const timer = setTimeout(() => controller.abort(), ms);
   try { return await fetch(url, { ...options, signal: controller.signal, cache: "no-store" }); }
   finally { clearTimeout(timer); }
+}
+
+function loadMqttLibrary() {
+  if (window.mqtt) return Promise.resolve(window.mqtt);
+  if (mqttLoading) return mqttLoading;
+  mqttLoading = new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/mqtt/dist/mqtt.min.js";
+    script.onload = () => resolve(window.mqtt);
+    script.onerror = () => reject(new Error("MQTT.js 載入失敗"));
+    document.head.append(script);
+  });
+  return mqttLoading;
+}
+
+function applyStatus(data) {
+  if (typeof data.main_breaker !== "boolean" || !Array.isArray(data.circuits)) throw new Error("裝置回傳格式不符合 GridGuard API");
+  state.status = normalize(data);
+  state.connected = true;
+  state.error = "";
+  state.updated = new Date();
+  const p = totalPower();
+  state.history.push(p);
+  if (state.history.length > 36) state.history.shift();
+  render();
+}
+
+async function initMqtt() {
+  if (mqttClient) return;
+  try {
+    const mqtt = await loadMqttLibrary();
+    mqttClient = mqtt.connect(MQTT_CONFIG.url, {
+      clientId: `gridguard-web-${crypto.randomUUID?.() || Math.random().toString(16).slice(2)}`,
+      clean: true,
+      reconnectPeriod: 2500,
+      connectTimeout: 7000,
+      keepalive: 30,
+    });
+    mqttClient.on("connect", () => {
+      mqttClient.subscribe([MQTT_TOPICS.status, MQTT_TOPICS.ack], { qos: 0 });
+      refs.controllerStatusText.textContent = "雲端已連線，等待 ESP32";
+      refs.connectionBadge.textContent = "CLOUD ONLINE";
+      refs.connectionBadge.className = "demo-badge online";
+    });
+    mqttClient.on("message", (topic, payload) => {
+      let data;
+      try { data = JSON.parse(payload.toString()); }
+      catch { return; }
+      if (topic === MQTT_TOPICS.status) {
+        try { lastMqttMessageAt = Date.now(); applyStatus(data); }
+        catch (error) { state.error = friendly(error); }
+      } else if (topic === MQTT_TOPICS.ack && data.request_id) {
+        const request = mqttRequests.get(data.request_id);
+        if (request) { mqttRequests.delete(data.request_id); clearTimeout(request.timer); request.resolve(data); }
+      }
+    });
+    mqttClient.on("offline", () => markDisconnected("MQTT 雲端連線中斷"));
+    mqttClient.on("error", () => markDisconnected("MQTT 雲端連線失敗"));
+  } catch (error) {
+    markDisconnected(friendly(error));
+  }
+}
+
+function markDisconnected(message = "尚未收到 ESP32 雲端資料") {
+  if (!state.connected && state.error === message) return;
+  state.connected = false;
+  state.error = message;
+  render();
 }
 
 function normalize(data) {
@@ -54,6 +136,10 @@ function friendly(error) {
 }
 
 async function connect(silent = false) {
+  if (CLOUD_MODE) {
+    await initMqtt();
+    return;
+  }
   if (state.busy) return;
   state.busy = true;
   if (!silent) { refs.connectionBadge.textContent = "CONNECTING"; refs.controllerStatusText.textContent = "正在連接 ESP32"; }
@@ -61,9 +147,7 @@ async function connect(silent = false) {
     const response = await fetchTimed(api("/api/status"), { headers: headers() });
     if (!response.ok) throw new Error(`ESP32 回應 HTTP ${response.status}`);
     const data = await response.json();
-    if (typeof data.main_breaker !== "boolean" || !Array.isArray(data.circuits)) throw new Error("裝置回傳格式不符合 GridGuard API");
-    state.status = normalize(data); state.connected = true; state.error = ""; state.updated = new Date();
-    const p = totalPower(); state.history.push(p); if (state.history.length > 36) state.history.shift();
+    applyStatus(data);
   } catch (error) {
     state.connected = false; state.error = friendly(error); if (!silent) toast(state.error, "danger");
   } finally { state.busy = false; render(); }
@@ -83,12 +167,13 @@ function busPowered(status = state.status) {
 function render() { renderConnection(); renderSummary(); renderFlow(); renderMaster(); renderCircuits(); renderEnergy(); renderEvents(); drawChart(); }
 
 function renderConnection() {
-  const label = cfg.base ? cfg.base.replace(/^https?:\/\//, "") : (location.host || "同源裝置");
-  refs.controllerAddress.textContent = `ESP32 · ${label}`;
+  const label = CLOUD_MODE ? "MQTT · broker.emqx.io" : cfg.base ? `ESP32 · ${cfg.base.replace(/^https?:\/\//, "")}` : `ESP32 · ${location.host || "同源裝置"}`;
+  refs.controllerAddress.textContent = label;
   refs.connectionBadge.textContent = state.connected ? "DEVICE ONLINE" : "DEVICE OFFLINE";
   refs.connectionBadge.className = `demo-badge ${state.connected ? "online" : "offline"}`;
-  refs.controllerStatusText.textContent = state.connected ? "控制器已連線" : "等待 ESP32";
+  refs.controllerStatusText.textContent = state.connected ? "控制器已連線" : CLOUD_MODE && mqttClient?.connected ? "雲端已連線，等待 ESP32" : "等待 ESP32";
   refs.lastUpdateSide.textContent = state.connected ? "剛剛" : "無資料";
+  refs.statusDot.className = `status-dot ${state.connected ? "online" : "offline"}`;
 }
 
 function renderSummary() {
@@ -150,11 +235,40 @@ async function execute() {
   if (!pending || !state.connected || (pending.phrase && refs.confirmInput.value.trim() !== pending.phrase)) return;
   refs.modalConfirmBtn.disabled = true; refs.modalConfirmBtn.textContent = "傳送命令中…";
   const path = pending.type === "main" ? "/api/breaker" : "/api/circuit"; const payload = { target: pending.target, action: pending.action, request_id: crypto.randomUUID?.() || `${Date.now()}-${Math.random()}` };
-  try { const response = await fetchTimed(api(path), { method: "POST", headers: headers(true), body: JSON.stringify(payload) }, 4500); const result = await response.json().catch(() => ({})); if (!response.ok || result.accepted !== true) throw new Error(result.error || `控制命令失敗（HTTP ${response.status}）`); const name = `${payload.target.toUpperCase()} ${payload.action === "open" ? "斷電" : "復電"}`; state.events.unshift({ time: new Date().toISOString(), name, source: "Web → ESP32", result: result.feedback_verified ? "接點已確認" : "命令已接受", level: payload.action === "open" ? "warning" : "normal" }); hide(refs.confirmModal); pending = null; toast(result.feedback_verified ? `${name}，實體回授已確認。` : `${name}命令已送出；未配置實體接點回授。`, result.feedback_verified ? "normal" : "warning"); await connect(true); }
+  try { const result = await sendControl(path, payload); const name = `${payload.target.toUpperCase()} ${payload.action === "open" ? "斷電" : "復電"}`; state.events.unshift({ time: new Date().toISOString(), name, source: CLOUD_MODE ? "Web → MQTT → ESP32" : "Web → ESP32", result: result.feedback_verified ? "接點已確認" : "命令已接受", level: payload.action === "open" ? "warning" : "normal" }); hide(refs.confirmModal); pending = null; toast(result.feedback_verified ? `${name}，實體回授已確認。` : `${name}命令已送出；未配置實體接點回授。`, result.feedback_verified ? "normal" : "warning"); if (!CLOUD_MODE) await connect(true); }
   catch (error) { refs.modalConfirmBtn.disabled = false; refs.modalConfirmBtn.textContent = pending.confirmText; toast(friendly(error), "danger"); }
 }
 
-function openConnection() { refs.deviceUrlInput.value = cfg.base; refs.mixedContentWarning.classList.toggle("hidden", location.protocol !== "https:"); show(refs.connectionModal); }
+async function sendControl(path, payload) {
+  if (!CLOUD_MODE) {
+    const response = await fetchTimed(api(path), { method: "POST", headers: headers(true), body: JSON.stringify(payload) }, 4500);
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.accepted !== true) throw new Error(result.error || `控制命令失敗（HTTP ${response.status}）`);
+    return result;
+  }
+  if (!mqttClient?.connected) throw new Error("MQTT 尚未連線");
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { mqttRequests.delete(payload.request_id); reject(new Error("ESP32 未在時間內回覆命令")); }, 5000);
+    mqttRequests.set(payload.request_id, { resolve, reject, timer });
+    mqttClient.publish(MQTT_TOPICS.command, JSON.stringify(payload), { qos: 0, retain: false }, (error) => {
+      if (!error) return;
+      clearTimeout(timer); mqttRequests.delete(payload.request_id); reject(error);
+    });
+  }).then((result) => {
+    if (result.accepted !== true) throw new Error(result.error || "ESP32 拒絕控制命令");
+    return result;
+  });
+}
+
+function openConnection() {
+  refs.deviceUrlInput.value = cfg.base;
+  refs.connectionHelp.textContent = CLOUD_MODE ? "此公開網站透過 MQTT 雲端中繼連接 ESP32，不需要位於相同 Wi-Fi。" : "此頁面由 ESP32 提供，將直接使用本機 HTTP API。";
+  refs.deviceUrlField.classList.toggle("hidden", CLOUD_MODE);
+  refs.mixedContentWarning.classList.toggle("hidden", !CLOUD_MODE);
+  refs.mixedContentWarning.innerHTML = CLOUD_MODE ? "展示模式使用公開 EMQX Broker。請勿用於真實住宅電箱或敏感資料。" : "";
+  $("#connectionSaveBtn").classList.toggle("hidden", CLOUD_MODE);
+  show(refs.connectionModal);
+}
 async function saveConnection() { let url = refs.deviceUrlInput.value.trim().replace(/\/$/, ""); if (url && !/^https?:\/\//i.test(url)) url = `http://${url}`; cfg.base = url; sessionStorage.setItem("gridguard.deviceUrl", cfg.base); hide(refs.connectionModal); await connect(); }
 
 function drawChart() {
@@ -166,6 +280,7 @@ function drawChart() {
 function toast(message, type = "normal") { const el = document.createElement("div"); el.className = `toast ${type}`; el.innerHTML = `<span>${type === "danger" ? "!" : type === "warning" ? "△" : "✓"}</span><strong>${esc(message)}</strong>`; refs.toastRegion.append(el); setTimeout(() => el.classList.add("out"), 3500); setTimeout(() => el.remove(), 3800); }
 function downloadLog() { const rows = [["時間", "事件", "來源", "結果"], ...state.events.map((e) => [new Date(e.time).toLocaleString("zh-TW"), e.name, e.source, e.result])]; const csv = `\uFEFF${rows.map((row) => row.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\r\n")}`; const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); const a = document.createElement("a"); a.href = url; a.download = `gridguard-events-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url); }
 function updateClock() { const now = new Date(); refs.clockTime.textContent = now.toLocaleTimeString("zh-TW", { hour12: false }); refs.clockDate.textContent = now.toLocaleDateString("zh-TW", { weekday: "short", year: "numeric", month: "2-digit", day: "2-digit" }); if (state.updated && state.connected) { const sec = Math.round((Date.now() - state.updated) / 1000); refs.lastUpdateSide.textContent = sec < 3 ? "剛剛" : `${sec} 秒前`; } }
-function bind() { refs.masterActionBtn.addEventListener("click", () => requestMain("open")); refs.restoreMasterBtn.addEventListener("click", () => requestMain("close")); refs.confirmInput.addEventListener("input", () => refs.modalConfirmBtn.disabled = refs.confirmInput.value.trim() !== pending?.phrase); refs.modalConfirmBtn.addEventListener("click", execute); $("#modalCancelBtn").addEventListener("click", () => hide(refs.confirmModal)); $("#modalCloseBtn").addEventListener("click", () => hide(refs.confirmModal)); [$("#connectionSettingsBtn"), refs.connectionBadge].forEach((b) => b.addEventListener("click", openConnection)); $("#connectionModalClose").addEventListener("click", () => hide(refs.connectionModal)); $("#connectionCancelBtn").addEventListener("click", () => hide(refs.connectionModal)); $("#connectionSaveBtn").addEventListener("click", saveConnection); $("#refreshBtn").addEventListener("click", () => connect()); $("#downloadLogBtn").addEventListener("click", downloadLog); $("#menuBtn").addEventListener("click", () => document.body.classList.toggle("menu-open")); window.addEventListener("resize", drawChart); }
+function closeMobileMenu() { document.body.classList.remove("menu-open"); $("#menuBtn").setAttribute("aria-expanded", "false"); }
+function bind() { refs.masterActionBtn.addEventListener("click", () => requestMain("open")); refs.restoreMasterBtn.addEventListener("click", () => requestMain("close")); refs.confirmInput.addEventListener("input", () => refs.modalConfirmBtn.disabled = refs.confirmInput.value.trim() !== pending?.phrase); refs.modalConfirmBtn.addEventListener("click", execute); $("#modalCancelBtn").addEventListener("click", () => hide(refs.confirmModal)); $("#modalCloseBtn").addEventListener("click", () => hide(refs.confirmModal)); [$("#connectionSettingsBtn"), refs.connectionBadge].forEach((b) => b.addEventListener("click", openConnection)); $("#connectionModalClose").addEventListener("click", () => hide(refs.connectionModal)); $("#connectionCancelBtn").addEventListener("click", () => hide(refs.connectionModal)); $("#connectionSaveBtn").addEventListener("click", saveConnection); $("#refreshBtn").addEventListener("click", () => connect()); $("#downloadLogBtn").addEventListener("click", downloadLog); $("#menuBtn").addEventListener("click", () => { const open = document.body.classList.toggle("menu-open"); $("#menuBtn").setAttribute("aria-expanded", String(open)); }); $$(".nav-item").forEach((link) => link.addEventListener("click", () => { $$(".nav-item").forEach((item) => item.classList.toggle("active", item === link)); closeMobileMenu(); })); window.addEventListener("resize", drawChart); window.addEventListener("keydown", (event) => { if (event.key === "Escape") { hide(refs.confirmModal); hide(refs.connectionModal); closeMobileMenu(); } }); }
 
-bind(); updateClock(); render(); setInterval(updateClock, 1000); connect(true); setInterval(() => { if (!document.hidden) connect(true); }, 2000);
+bind(); updateClock(); render(); setInterval(updateClock, 1000); connect(true); setInterval(() => { if (document.hidden) return; if (CLOUD_MODE) { if (state.connected && Date.now() - lastMqttMessageAt > 7000) markDisconnected("ESP32 雲端回報逾時"); } else connect(true); }, 2000);

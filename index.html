@@ -49,7 +49,7 @@
         <div class="sidebar-foot">
           <div class="connection-card">
             <div class="connection-line">
-              <span class="status-dot online"></span>
+              <span class="status-dot offline" id="statusDot"></span>
             <strong id="controllerStatusText">等待 ESP32</strong>
             </div>
             <span id="controllerAddress">ESP32 · 尚未連接</span>
@@ -308,12 +308,11 @@
         <div class="modal-icon safe">⌁</div>
         <p class="section-kicker">CONTROLLER CONNECTION</p>
         <h2 id="connectionModalTitle">連接 GridGuard 控制器</h2>
-        <p>若網頁由 ESP32 的 LittleFS 提供，裝置網址留白即可，頁面會直接連線。</p>
+        <p id="connectionHelp">若網頁由 ESP32 的 LittleFS 提供，頁面會直接連線。</p>
         <div class="connection-warning hidden" id="mixedContentWarning">
-          雲端 HTTPS 頁面通常無法直接呼叫區網 HTTP 裝置。請改用 ESP32 提供的
-          <b>http://gridguard.local</b> 頁面。
+          展示模式使用公開 MQTT Broker，請勿用於真實住宅電箱或敏感資料。
         </div>
-        <label class="confirm-field">
+        <label class="confirm-field" id="deviceUrlField">
           <span>ESP32 裝置網址（同源部署請留白）</span>
           <input id="deviceUrlInput" type="url" autocomplete="url" placeholder="http://gridguard.local" />
         </label>
