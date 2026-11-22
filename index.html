@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07111f" />
+    <meta
+      name="description"
+      content="GridGuard 智慧配電控制中心：整合主電源控制、三路負載監測與 1S3P 備援儲能。"
+    />
+    <title>GridGuard｜智慧配電控制中心</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="主選單">
+        <a class="brand" href="#overview" aria-label="GridGuard 首頁">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" role="img">
+              <path d="M24 4 42 11v11c0 11-7.4 18.6-18 22C13.4 40.6 6 33 6 22V11l18-7Z" />
+              <path d="m27 12-11 14h7l-2 11 11-15h-7l2-10Z" />
+            </svg>
+          </span>
+          <span>
+            <strong>GridGuard</strong>
+            <small>SMART ENERGY CONTROL</small>
+          </span>
+        </a>
+
+        <nav class="nav-list">
+          <a class="nav-item active" href="#overview" data-section="overview">
+            <span class="nav-icon" aria-hidden="true">⌂</span>
+            系統總覽
+          </a>
+          <a class="nav-item" href="#breaker" data-section="breaker">
+            <span class="nav-icon" aria-hidden="true">ϟ</span>
+            電閘控制
+          </a>
+          <a class="nav-item" href="#energy" data-section="energy">
+            <span class="nav-icon" aria-hidden="true">◫</span>
+            儲能監控
+          </a>
+          <a class="nav-item" href="#events" data-section="events">
+            <span class="nav-icon" aria-hidden="true">≡</span>
+            事件紀錄
+          </a>
+        </nav>
+
+        <div class="sidebar-foot">
+          <div class="connection-card">
+            <div class="connection-line">
+              <span class="status-dot online"></span>
+            <strong id="controllerStatusText">等待 ESP32</strong>
+            </div>
+            <span id="controllerAddress">ESP32 · 尚未連接</span>
+            <small>最後回報：<b id="lastUpdateSide">剛剛</b></small>
+          </div>
+          <button class="ghost-button compact" id="connectionSettingsBtn" type="button">
+            裝置連線設定
+          </button>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <button class="menu-button" id="menuBtn" type="button" aria-label="開啟選單" aria-expanded="false">
+            <span></span><span></span><span></span>
+          </button>
+          <div>
+            <p class="eyebrow">GRIDGUARD ENERGY MANAGEMENT PLATFORM</p>
+            <h1>智慧配電控制中心</h1>
+          </div>
+          <div class="topbar-actions">
+            <button class="demo-badge offline" id="connectionBadge" type="button">DEVICE OFFLINE</button>
+            <div class="clock" aria-label="系統時間">
+              <strong id="clockTime">--:--:--</strong>
+              <span id="clockDate">----/--/--</span>
+            </div>
+          </div>
+        </header>
+
+        <section class="metric-grid" id="overview" aria-label="即時摘要">
+          <article class="metric-card primary">
+            <div class="metric-head">
+              <span>主電源電閘</span>
+              <span class="mini-icon">ϟ</span>
+            </div>
+            <div class="metric-main">
+              <strong id="mainBreakerMetric">—</strong>
+              <span class="state-chip off" id="mainBreakerChip">OFFLINE</span>
+            </div>
+            <p id="mainBreakerSub">等待 ESP32 狀態回報</p>
+          </article>
+
+          <article class="metric-card">
+            <div class="metric-head">
+              <span>目前總負載</span>
+              <span class="mini-icon">⌁</span>
+            </div>
+            <div class="metric-main number">
+              <strong id="totalPower">—</strong><span>W</span>
+            </div>
+            <p><b id="activeCircuits">—</b> / 3 路負載運作中</p>
+          </article>
+
+          <article class="metric-card">
+            <div class="metric-head">
+              <span>供電來源</span>
+              <span class="mini-icon">⇄</span>
+            </div>
+            <div class="metric-main">
+              <strong id="supplySource">—</strong>
+              <span class="state-chip off" id="supplyChip">OFFLINE</span>
+            </div>
+            <p id="supplySub">尚未取得供電來源</p>
+          </article>
+
+          <article class="metric-card battery-metric">
+            <div class="metric-head">
+              <span>1S3P 備援電池</span>
+              <span class="mini-icon">▣</span>
+            </div>
+            <div class="metric-main number">
+              <strong id="batterySocMetric">—</strong><span>%</span>
+            </div>
+            <div class="mini-progress"><span id="batteryMiniBar" style="width: 0%"></span></div>
+            <p id="batteryStateMetric">等待電池感測資料</p>
+          </article>
+        </section>
+
+        <section class="control-layout" id="breaker">
+          <article class="panel single-line-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="section-kicker">POWER FLOW</p>
+                <h3>供電來源即時狀態</h3>
+              </div>
+              <div class="flow-legend" aria-label="供電路徑圖例">
+                <span class="legend"><i></i> 主電源</span>
+                <span class="legend battery-legend"><i></i> 電池</span>
+              </div>
+            </div>
+
+            <div class="simple-flow-diagram" id="powerFlow">
+              <div class="simple-main-row" aria-label="主電源與輸出">
+                <div class="simple-node source-node" id="gridNode">
+                  <span class="simple-icon">⌁</span>
+                  <small>主電源</small>
+                  <strong id="gridNodeValue">等待偵測</strong>
+                </div>
+                <div class="simple-line" id="lineGrid"><span></span></div>
+                <div class="simple-node breaker-node" id="breakerNode">
+                  <span class="simple-switch"><i></i></span>
+                  <small>主電源開關</small>
+                  <strong id="breakerNodeText">等待狀態</strong>
+                </div>
+                <div class="simple-line" id="lineBus"><span></span></div>
+                <div class="simple-node output-node" id="busNode">
+                  <span class="simple-icon">▤</span>
+                  <small>輸出</small>
+                  <strong id="switchSourceText">等待偵測</strong>
+                  <b id="busValue">—</b>
+                </div>
+              </div>
+
+              <div class="simple-battery-row" id="batteryFlow" aria-label="電池備援輸入">
+                <div class="simple-node battery-node">
+                  <span class="simple-icon">▣</span>
+                  <small>電池</small>
+                  <strong id="batteryNodeValue">3.7 V</strong>
+                </div>
+                <div class="simple-battery-link"><span></span></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel master-control" id="masterControl">
+            <div class="panel-heading">
+              <div>
+                <p class="section-kicker danger-text">REMOTE BREAKER</p>
+                <h3>主電源電閘遠端控制</h3>
+              </div>
+              <span class="lock-badge" id="remoteLockBadge">離線鎖定</span>
+            </div>
+
+            <div class="breaker-visual on" id="breakerVisual">
+              <div class="breaker-ring">
+                <span class="breaker-toggle"></span>
+              </div>
+              <div>
+                <small>MAIN SOURCE RELAY</small>
+                <strong id="breakerVisualText">狀態未知</strong>
+                <span id="breakerVisualSub">連接裝置後才能控制</span>
+              </div>
+            </div>
+
+            <button class="danger-button" id="masterActionBtn" type="button" disabled>
+              <span>⏻</span>
+              遠端切斷主電源
+            </button>
+            <button class="secondary-button hidden" id="restoreMasterBtn" type="button">
+              恢復主電源
+            </button>
+            <p class="control-meta">最近操作：<span id="lastMasterAction">尚無遠端操作</span></p>
+          </article>
+        </section>
+
+        <section class="panel circuits-panel" aria-labelledby="circuits-title">
+          <div class="panel-heading circuits-heading">
+            <div>
+              <p class="section-kicker">BRANCH CIRCUITS</p>
+              <h3 id="circuits-title">分路負載監控與控制</h3>
+            </div>
+            <div class="panel-tools">
+              <span class="updated-label">每 2 秒更新</span>
+              <button class="icon-button" id="refreshBtn" type="button" aria-label="重新整理">↻</button>
+            </div>
+          </div>
+          <div class="circuits-grid" id="circuitsGrid"></div>
+        </section>
+
+        <section class="energy-layout" id="energy">
+          <article class="panel battery-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="section-kicker">ENERGY STORAGE</p>
+                <h3>備援電池狀態</h3>
+              </div>
+              <span class="state-chip charging" id="chargingChip">等待資料</span>
+            </div>
+            <div class="battery-content">
+              <div class="battery-gauge" id="batteryGauge" style="--soc: 0">
+              <div class="gauge-center">
+                  <span id="batterySoc">—</span><small>%</small>
+                  <b>SOC</b>
+                </div>
+              </div>
+              <div class="battery-readings">
+                <div><span>電池電壓</span><strong id="batteryVoltage">—</strong></div>
+                <div><span>電池狀態</span><strong id="batteryCurrent">—</strong></div>
+              </div>
+            </div>
+          </article>
+
+          <article class="panel chart-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="section-kicker">LIVE TREND</p>
+                <h3>即時負載趨勢</h3>
+              </div>
+              <div class="chart-legend"><i></i>總功率（W）</div>
+            </div>
+            <div class="chart-wrap">
+              <canvas id="powerChart" aria-label="最近一分鐘總功率趨勢圖"></canvas>
+            </div>
+            <div class="chart-summary">
+              <div><small>本次峰值</small><strong id="peakPower">— W</strong></div>
+              <div><small>平均功率</small><strong id="avgPower">— W</strong></div>
+            </div>
+          </article>
+        </section>
+
+        <section class="events-layout" id="events">
+          <article class="panel event-panel">
+            <div class="panel-heading">
+              <div>
+                <p class="section-kicker">AUDIT LOG</p>
+                <h3>操作與系統事件</h3>
+              </div>
+              <button class="ghost-button compact" id="downloadLogBtn" type="button">匯出紀錄</button>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr><th>時間</th><th>事件</th><th>來源</th><th>結果</th></tr>
+                </thead>
+                <tbody id="eventTableBody"></tbody>
+              </table>
+            </div>
+          </article>
+
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="confirmModal" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+        <button class="modal-close" id="modalCloseBtn" type="button" aria-label="關閉">×</button>
+        <div class="modal-icon danger" id="modalIcon">!</div>
+        <p class="section-kicker danger-text" id="modalKicker">高風險遠端操作</p>
+        <h2 id="modalTitle">確認切斷主電源？</h2>
+        <p id="modalDescription">切換模組將轉為電池供電，三路負載維持各自的開關狀態。</p>
+        <div class="impact-list" id="modalImpact"></div>
+        <label class="confirm-field" id="confirmField">
+          <span>請輸入「確認斷電」以解鎖操作</span>
+          <input id="confirmInput" type="text" autocomplete="off" placeholder="確認斷電" />
+        </label>
+        <div class="modal-actions">
+          <button class="secondary-button" id="modalCancelBtn" type="button">取消</button>
+          <button class="danger-button" id="modalConfirmBtn" type="button" disabled>確認執行</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-backdrop" id="connectionModal" aria-hidden="true">
+      <div class="modal connection-modal" role="dialog" aria-modal="true" aria-labelledby="connectionModalTitle">
+        <button class="modal-close" id="connectionModalClose" type="button" aria-label="關閉">×</button>
+        <div class="modal-icon safe">⌁</div>
+        <p class="section-kicker">CONTROLLER CONNECTION</p>
+        <h2 id="connectionModalTitle">連接 GridGuard 控制器</h2>
+        <p>若網頁由 ESP32 的 LittleFS 提供，裝置網址留白即可，頁面會直接連線。</p>
+        <div class="connection-warning hidden" id="mixedContentWarning">
+          雲端 HTTPS 頁面通常無法直接呼叫區網 HTTP 裝置。請改用 ESP32 提供的
+          <b>http://gridguard.local</b> 頁面。
+        </div>
+        <label class="confirm-field">
+          <span>ESP32 裝置網址（同源部署請留白）</span>
+          <input id="deviceUrlInput" type="url" autocomplete="url" placeholder="http://gridguard.local" />
+        </label>
+        <div class="modal-actions">
+          <button class="secondary-button" id="connectionCancelBtn" type="button">取消</button>
+          <button class="secondary-button" id="connectionSaveBtn" type="button">儲存並連線</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="toast-region" id="toastRegion" aria-live="polite"></div>
+    <script src="./app.js"></script>
+  </body>
+</html>
