@@ -62,6 +62,11 @@ input:focus-visible {
   outline-offset: 3px;
 }
 
+#deviceCodeInput {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .app-shell {
   min-height: 100vh;
 }

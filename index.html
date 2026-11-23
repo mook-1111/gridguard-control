@@ -312,6 +312,10 @@
         <div class="connection-warning hidden" id="mixedContentWarning">
           展示模式使用公開 MQTT Broker，請勿用於真實住宅電箱或敏感資料。
         </div>
+        <label class="confirm-field hidden" id="deviceCodeField">
+          <span>裝置代碼</span>
+          <input id="deviceCodeInput" type="text" autocomplete="off" maxlength="32" placeholder="例如 GG-12AB34CD56EF" />
+        </label>
         <label class="confirm-field" id="deviceUrlField">
           <span>ESP32 裝置網址（同源部署請留白）</span>
           <input id="deviceUrlInput" type="url" autocomplete="url" placeholder="http://gridguard.local" />
