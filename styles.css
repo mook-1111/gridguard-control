@@ -263,6 +263,52 @@ input:focus-visible {
   gap: 18px;
 }
 
+.device-connect-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin: 18px 0 24px;
+  padding: 16px 18px;
+  border: 1px solid rgba(75, 231, 169, 0.28);
+  border-radius: 15px;
+  background: linear-gradient(135deg, rgba(28, 90, 78, 0.24), rgba(8, 25, 42, 0.88));
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.14);
+}
+
+.device-connect-copy { display: grid; gap: 4px; min-width: 210px; }
+.device-connect-copy strong { color: var(--text); font-size: 1rem; }
+.device-connect-copy span { color: var(--muted); font-size: 0.875rem; }
+
+.device-connect-form {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: min(100%, 520px);
+}
+
+#quickDeviceCodeInput {
+  width: 100%;
+  min-width: 220px;
+  padding: 11px 13px;
+  border: 1px solid rgba(113, 145, 178, 0.34);
+  border-radius: 10px;
+  color: var(--text);
+  background: rgba(4, 15, 28, 0.78);
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+}
+
+#quickDeviceConnectBtn {
+  flex: 0 0 auto;
+  min-height: 42px;
+  padding-inline: 18px;
+  color: #061a16;
+  border-color: var(--green);
+  background: var(--green);
+  font-weight: 800;
+}
+
 .demo-badge {
   border: 1px solid rgba(246, 189, 96, 0.28);
   border-radius: 999px;
@@ -1813,6 +1859,15 @@ footer {
   .clock span { display: none; }
   .clock { min-width: auto; padding-left: 11px; }
   .clock strong { font-size: 12px; }
+  .device-connect-strip {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+    margin-top: -8px;
+    padding: 14px;
+  }
+  .device-connect-form { width: 100%; }
+  #quickDeviceCodeInput { min-width: 0; }
   .hero-status { align-items: flex-start; flex-direction: column; }
   .hero-status h2 { font-size: 30px; }
   .system-health { width: 100%; }
@@ -1852,6 +1907,8 @@ footer {
 @media (max-width: 440px) {
   .topbar h1 { font-size: 15px; }
   .clock { display: none; }
+  .device-connect-form { align-items: stretch; flex-direction: column; }
+  #quickDeviceConnectBtn { width: 100%; }
   .metric-grid { grid-template-columns: 1fr; }
   .metric-card { min-height: 116px; }
   .power-flow {

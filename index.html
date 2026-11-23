@@ -79,6 +79,24 @@
           </div>
         </header>
 
+        <section class="device-connect-strip hidden" id="quickDeviceStrip" aria-label="ESP32 裝置連線">
+          <div class="device-connect-copy">
+            <strong>ESP32 裝置代碼</strong>
+            <span>輸入序列監控器顯示的 GG-... 代碼</span>
+          </div>
+          <div class="device-connect-form">
+            <input
+              id="quickDeviceCodeInput"
+              type="text"
+              autocomplete="off"
+              maxlength="32"
+              placeholder="例如 GG-12AB34CD56EF"
+              aria-label="ESP32 裝置代碼"
+            />
+            <button class="secondary-button" id="quickDeviceConnectBtn" type="button">連接裝置</button>
+          </div>
+        </section>
+
         <section class="metric-grid" id="overview" aria-label="即時摘要">
           <article class="metric-card primary">
             <div class="metric-head">

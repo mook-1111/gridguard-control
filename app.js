@@ -36,6 +36,7 @@ const refs = Object.fromEntries([
   "batteryGauge", "batterySoc", "batteryVoltage", "batteryCurrent", "chargingChip", "batteryFlow",
   "peakPower", "avgPower", "powerChart", "eventTableBody", "confirmModal", "modalIcon", "modalKicker", "modalTitle", "modalDescription", "modalImpact",
   "confirmField", "confirmInput", "modalConfirmBtn", "connectionModal", "connectionHelp", "deviceCodeField", "deviceCodeInput", "deviceUrlField", "deviceUrlInput", "mixedContentWarning", "toastRegion", "statusDot",
+  "quickDeviceStrip", "quickDeviceCodeInput", "quickDeviceConnectBtn",
 ].map((id) => [id, $(`#${id}`)]));
 
 const finite = (v) => v === null || v === undefined || v === "" ? null : (Number.isFinite(Number(v)) ? Number(v) : null);
@@ -324,6 +325,7 @@ async function saveConnection() {
       return;
     }
     cfg.deviceId = deviceId;
+    refs.quickDeviceCodeInput.value = cfg.deviceId;
     localStorage.setItem("gridguard.deviceId", cfg.deviceId);
     const url = new URL(location.href);
     url.searchParams.set("device", cfg.deviceId);
@@ -342,6 +344,11 @@ async function saveConnection() {
   await connect();
 }
 
+function connectQuickDevice() {
+  refs.deviceCodeInput.value = refs.quickDeviceCodeInput.value;
+  saveConnection();
+}
+
 function drawChart() {
   const canvas = refs.powerChart, rect = canvas.getBoundingClientRect(); if (!rect.width) return; const ratio = devicePixelRatio || 1; canvas.width = rect.width * ratio; canvas.height = rect.height * ratio; const ctx = canvas.getContext("2d"); ctx.scale(ratio, ratio); const w = rect.width, h = rect.height, pad = { t: 12, r: 8, b: 24, l: 34 }; const values = state.history.filter((v) => v != null), max = Math.max(10, ...values) * 1.15; ctx.clearRect(0, 0, w, h); ctx.font = '9px "Microsoft JhengHei"'; ctx.fillStyle = "#6f8296"; ctx.strokeStyle = "rgba(128,154,181,.12)";
   for (let i = 0; i <= 4; i++) { const y = pad.t + ((h - pad.t - pad.b) / 4) * i; ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(w - pad.r, y); ctx.stroke(); ctx.fillText(`${Math.round(max - max / 4 * i)}W`, 2, y + 3); }
@@ -352,9 +359,11 @@ function toast(message, type = "normal") { const el = document.createElement("di
 function downloadLog() { const rows = [["時間", "事件", "來源", "結果"], ...state.events.map((e) => [new Date(e.time).toLocaleString("zh-TW"), e.name, e.source, e.result])]; const csv = `\uFEFF${rows.map((row) => row.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(",")).join("\r\n")}`; const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" })); const a = document.createElement("a"); a.href = url; a.download = `gridguard-events-${new Date().toISOString().slice(0, 10)}.csv`; a.click(); URL.revokeObjectURL(url); }
 function updateClock() { const now = new Date(); refs.clockTime.textContent = now.toLocaleTimeString("zh-TW", { hour12: false }); refs.clockDate.textContent = now.toLocaleDateString("zh-TW", { weekday: "short", year: "numeric", month: "2-digit", day: "2-digit" }); if (state.updated && state.connected) { const sec = Math.round((Date.now() - state.updated) / 1000); refs.lastUpdateSide.textContent = sec < 3 ? "剛剛" : `${sec} 秒前`; } }
 function closeMobileMenu() { document.body.classList.remove("menu-open"); $("#menuBtn").setAttribute("aria-expanded", "false"); }
-function bind() { refs.masterActionBtn.addEventListener("click", () => requestMain("open")); refs.restoreMasterBtn.addEventListener("click", () => requestMain("close")); refs.confirmInput.addEventListener("input", () => refs.modalConfirmBtn.disabled = refs.confirmInput.value.trim() !== pending?.phrase); refs.modalConfirmBtn.addEventListener("click", execute); $("#modalCancelBtn").addEventListener("click", () => hide(refs.confirmModal)); $("#modalCloseBtn").addEventListener("click", () => hide(refs.confirmModal)); [$("#connectionSettingsBtn"), refs.connectionBadge].forEach((b) => b.addEventListener("click", openConnection)); $("#connectionModalClose").addEventListener("click", () => hide(refs.connectionModal)); $("#connectionCancelBtn").addEventListener("click", () => hide(refs.connectionModal)); $("#connectionSaveBtn").addEventListener("click", saveConnection); $("#refreshBtn").addEventListener("click", () => connect()); $("#downloadLogBtn").addEventListener("click", downloadLog); $("#menuBtn").addEventListener("click", () => { const open = document.body.classList.toggle("menu-open"); $("#menuBtn").setAttribute("aria-expanded", String(open)); }); $$(".nav-item").forEach((link) => link.addEventListener("click", () => { $$(".nav-item").forEach((item) => item.classList.toggle("active", item === link)); closeMobileMenu(); })); window.addEventListener("resize", drawChart); window.addEventListener("keydown", (event) => { if (event.key === "Escape") { hide(refs.confirmModal); hide(refs.connectionModal); closeMobileMenu(); } }); }
+function bind() { refs.masterActionBtn.addEventListener("click", () => requestMain("open")); refs.restoreMasterBtn.addEventListener("click", () => requestMain("close")); refs.confirmInput.addEventListener("input", () => refs.modalConfirmBtn.disabled = refs.confirmInput.value.trim() !== pending?.phrase); refs.modalConfirmBtn.addEventListener("click", execute); $("#modalCancelBtn").addEventListener("click", () => hide(refs.confirmModal)); $("#modalCloseBtn").addEventListener("click", () => hide(refs.confirmModal)); [$("#connectionSettingsBtn"), refs.connectionBadge].forEach((b) => b.addEventListener("click", openConnection)); $("#connectionModalClose").addEventListener("click", () => hide(refs.connectionModal)); $("#connectionCancelBtn").addEventListener("click", () => hide(refs.connectionModal)); $("#connectionSaveBtn").addEventListener("click", saveConnection); refs.quickDeviceConnectBtn.addEventListener("click", connectQuickDevice); refs.quickDeviceCodeInput.addEventListener("keydown", (event) => { if (event.key === "Enter") connectQuickDevice(); }); $("#refreshBtn").addEventListener("click", () => connect()); $("#downloadLogBtn").addEventListener("click", downloadLog); $("#menuBtn").addEventListener("click", () => { const open = document.body.classList.toggle("menu-open"); $("#menuBtn").setAttribute("aria-expanded", String(open)); }); $$(".nav-item").forEach((link) => link.addEventListener("click", () => { $$(".nav-item").forEach((item) => item.classList.toggle("active", item === link)); closeMobileMenu(); })); window.addEventListener("resize", drawChart); window.addEventListener("keydown", (event) => { if (event.key === "Escape") { hide(refs.confirmModal); hide(refs.connectionModal); closeMobileMenu(); } }); }
 
 bind();
+refs.quickDeviceStrip.classList.toggle("hidden", !CLOUD_MODE);
+refs.quickDeviceCodeInput.value = cfg.deviceId;
 refs.deviceCodeInput.addEventListener("keydown", (event) => { if (event.key === "Enter") saveConnection(); });
 updateClock();
 render();
